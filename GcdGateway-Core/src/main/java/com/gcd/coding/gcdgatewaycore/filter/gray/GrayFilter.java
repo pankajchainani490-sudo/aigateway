@@ -20,6 +20,12 @@ public class GrayFilter implements Filter {
 
     @Override
     public void doPreFilter(GatewayContext context) {
+        // 如果没有服务定义（如下游是AI服务），跳过灰度检查
+        if (context.getRequest().getServiceDefinition() == null) {
+            context.doFilter();
+            return;
+        }
+
         RouteDefinition.FilterConfig filterConfig = FilterUtil.findFilterConfigByName(context.getRoute().getFilterConfigs(), GRAY_FILTER_NAME);
         if (filterConfig == null) {
             filterConfig = FilterUtil.buildDefaultGrayFilterConfig();

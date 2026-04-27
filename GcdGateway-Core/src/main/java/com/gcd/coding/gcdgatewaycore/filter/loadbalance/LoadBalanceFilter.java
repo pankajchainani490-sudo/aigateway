@@ -24,6 +24,12 @@ public class LoadBalanceFilter implements Filter {
 
     @Override
     public void doPreFilter(GatewayContext context) {
+        // 如果没有服务定义（如下游是AI服务），跳过负载均衡
+        if (context.getRequest().getServiceDefinition() == null) {
+            context.doFilter();
+            return;
+        }
+
         RouteDefinition.FilterConfig filterConfig = FilterUtil.findFilterConfigByName(context.getRoute().getFilterConfigs(), LOAD_BALANCE_FILTER_NAME);
         if (filterConfig == null) {
             filterConfig = FilterUtil.buildDefaultLoadBalanceFilterConfig();

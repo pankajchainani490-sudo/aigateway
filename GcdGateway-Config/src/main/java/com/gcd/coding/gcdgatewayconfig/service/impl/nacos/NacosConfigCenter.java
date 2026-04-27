@@ -42,10 +42,10 @@ public class NacosConfigCenter implements ConfigCenterProcessor {
 
     @SneakyThrows(NacosException.class)
     public void init(ConfigCenter configCenter) {
+        this.configCenter = configCenter;
         if (!configCenter.isEnabled() || !init.compareAndSet(false, true)) {
             return;
         }
-        this.configCenter = configCenter;
         this.configService = NacosFactory.createConfigService(buildProperties(configCenter));
     }
 

@@ -75,6 +75,11 @@ public class Bootstrap {
 
     private void initContainer() {
         container = new Container(config);
+        // 初始化路由配置到DynamicConfigManager
+        if (config.getRoutes() != null && !config.getRoutes().isEmpty()) {
+            DynamicConfigManager.getInstance().updateRoutes(config.getRoutes(), true);
+            log.info("路由配置已加载: {} 个路由", config.getRoutes().size());
+        }
     }
 
     private void initRegisterCenter() {

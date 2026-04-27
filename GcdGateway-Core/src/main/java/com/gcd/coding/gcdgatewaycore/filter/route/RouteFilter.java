@@ -18,6 +18,12 @@ public class RouteFilter implements Filter {
 
     @Override
     public void doPreFilter(GatewayContext context) {
+        // 如果没有服务定义（如AI服务），跳过路由
+        if (context.getRequest().getServiceDefinition() == null) {
+            context.doFilter();
+            return;
+        }
+
         RouteDefinition.ResilienceConfig resilience = context.getRoute().getResilience();
         if (resilience.isEnabled()) { // 开启弹性配置
             Resilience.getInstance().executeRequest(context);
