@@ -1,0 +1,2 @@
+com.gcd.coding.gcdgatewayai.cache.ExactMatchCacheProvider
+com.gcd.coding.gcdgatewayai.cache.EmbeddingMatchCacheProvider

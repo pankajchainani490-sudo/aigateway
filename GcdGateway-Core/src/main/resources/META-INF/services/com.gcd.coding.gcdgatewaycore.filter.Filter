@@ -1,0 +1,5 @@
+com.gcd.coding.gcdgatewaycore.filter.loadbalance.LoadBalanceFilter
+com.gcd.coding.gcdgatewaycore.filter.gray.GrayFilter
+com.gcd.coding.gcdgatewaycore.filter.route.RouteFilter
+com.gcd.coding.gcdgatewaycore.filter.cors.CorsFilter
+com.gcd.coding.gcdgatewaycore.filter.flow.FlowFilter

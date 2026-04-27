@@ -1,0 +1,66 @@
+gcd:
+  gateway:
+    name: gcd-ai-gateway
+    port: 10080
+    configCenter:
+      enabled: false
+      type: NACOS
+      address: 127.0.0.1:8848
+    registerCenter:
+      type: NACOS
+      address: 127.0.0.1:8848
+    globalCorsConfig:
+      allowOrigin: "*"
+      allowMethods: "GET,POST,OPTIONS"
+      allowHeaders: "Content-Type, Authorization"
+      maxAge: 86400
+    routes:
+      - id: ai-chat-route
+        serviceName: ai-chat-service
+        uri: /api/ai/**
+    ai:
+      enabled: true
+      billing:
+        enabled: true
+        currency: CNY
+        logEnabled: true
+      token:
+        defaultRateLimitPerMinute: 1000000
+        tokenRateLimitEnabled: false
+      cache:
+        enabled: true
+        mode: exact
+        ttlSeconds: 3600
+        maxSize: 10000
+        similarityThreshold: 0.95
+      providers:
+        - name: deepseek
+          type: deepseek
+          baseUrl: https://api.deepseek.com
+          apiKey: sk-cd34d611abaf4ab8a7e398bdd3ad3251
+          protocol: openai
+          supportsStreaming: true
+          connectTimeout: 30000
+          requestTimeout: 120000
+          maxRetries: 3
+      models:
+        - modelName: deepseek-chat
+          providerName: deepseek
+          providerModelId: deepseek-chat
+          inputPricePer1KTokens: 0.001
+          outputPricePer1KTokens: 0.002
+          cacheHitDiscount: 0.5
+          maxInputTokens: 128000
+          maxOutputTokens: 4096
+          supportsStreaming: true
+          weight: 100
+        - modelName: deepseek-reasoner
+          providerName: deepseek
+          providerModelId: deepseek-reasoner
+          inputPricePer1KTokens: 0.004
+          outputPricePer1KTokens: 0.008
+          cacheHitDiscount: 0.5
+          maxInputTokens: 128000
+          maxOutputTokens: 4096
+          supportsStreaming: true
+          weight: 100
