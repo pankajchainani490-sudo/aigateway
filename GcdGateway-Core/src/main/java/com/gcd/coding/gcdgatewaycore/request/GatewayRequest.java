@@ -155,7 +155,6 @@ public class GatewayRequest {
         ByteBuf contentBuffer = fullHttpRequest.content();
         if (Objects.nonNull(contentBuffer)) {
             this.requestBuilder.setBody(contentBuffer.nioBuffer());
-            contentBuffer.release();
         }
     }
 

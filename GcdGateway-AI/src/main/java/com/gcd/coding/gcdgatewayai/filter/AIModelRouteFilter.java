@@ -4,10 +4,14 @@ import com.gcd.coding.gcdgatewayai.config.*;
 import com.gcd.coding.gcdgatewayai.model.*;
 import com.gcd.coding.gcdgatewayai.provider.AIModelProvider;
 import com.gcd.coding.gcdgatewayai.provider.AIModelProviderManager;
-import com.gcd.coding.gcdgatewaycore.helper.ResponseHelper;
-import com.gcd.coding.gcdgatewaycore.response.GatewayResponse;
 import com.gcd.coding.gcdgatewaycore.context.GatewayContext;
 import com.gcd.coding.gcdgatewaycore.filter.Filter;
+import com.gcd.coding.gcdgatewaycore.helper.ContextHelper;
+import com.gcd.coding.gcdgatewaycore.helper.ResponseHelper;
+import com.gcd.coding.gcdgatewaycore.response.GatewayResponse;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import static com.gcd.coding.gcdgatewaycommon.constant.FilterConstant.AI_MODEL_ROUTE_FILTER_NAME;
@@ -18,19 +22,25 @@ public class AIModelRouteFilter implements Filter {
 
     @Override
     public void doPreFilter(GatewayContext context) {
+        log.info("AIModelRouteFilter.doPreFilter() 开始执行");
         AIGatewayConfig aiConfig = AIGatewayConfigManager.getInstance().getConfig();
-        if (!aiConfig.isEnabled()) {
+        log.info("AI配置: enabled={}", aiConfig != null ? aiConfig.isEnabled() : "null");
+        if (aiConfig == null || !aiConfig.isEnabled()) {
+            log.info("AI配置未启用或为空，跳过");
             context.doFilter();
             return;
         }
 
+        log.info("cacheHit={}", context.isCacheHit());
         if (context.isCacheHit()) {
             context.doFilter();
             return;
         }
 
         AIRequest aiRequest = context.getAiRequest(AIRequest.class);
+        log.info("aiRequest={}, model={}", aiRequest, aiRequest != null ? aiRequest.getModel() : "null");
         if (aiRequest == null || aiRequest.getModel() == null) {
+            log.info("aiRequest为空或model为空，跳过AI路由");
             context.doFilter();
             return;
         }
@@ -55,6 +65,7 @@ public class AIModelRouteFilter implements Filter {
         }
 
         AIModelProvider provider = AIModelProviderManager.getInstance().getProvider(providerConfig.getName());
+        log.info("provider={}, providerName={}", provider, providerConfig.getName());
         if (provider == null) {
             log.error("未找到Provider实例: {}", providerConfig.getName());
             GatewayResponse response = ResponseHelper.buildGatewayResponse(
@@ -76,22 +87,31 @@ public class AIModelRouteFilter implements Filter {
 
         aiRequest.setModel(providerModelId);
 
+        log.info("准备调用AI provider, useStream={}", useStream);
         if (useStream) {
             provider.chatStream(aiRequest, providerModelId, context.getNettyCtx());
         } else {
+            log.info("调用 provider.chat()...");
             provider.chat(aiRequest, providerModelId)
-                    .thenAccept(aiResponse -> {
-                        context.setAiResponse(aiResponse);
-                        context.doFilter();
-                    })
-                    .exceptionally(throwable -> {
-                        log.error("AI调用失败: {}", throwable.getMessage());
-                        context.setResponse(ResponseHelper.buildGatewayResponse(
-                            com.gcd.coding.gcdgatewaycommon.enums.ResponseCode.HTTP_RESPONSE_ERROR));
-                        context.setShortCircuit(true);
-                        context.doFilter();
-                        return null;
+                    .handle((aiResponse, throwable) -> {
+                        log.info("handle callback called, throwable={}", throwable);
+                        FullHttpResponse httpResponse;
+                        if (throwable != null) {
+                            log.error("AI调用失败: {}", throwable.getMessage());
+                            GatewayResponse gatewayResponse = ResponseHelper.buildGatewayResponse(
+                                com.gcd.coding.gcdgatewaycommon.enums.ResponseCode.HTTP_RESPONSE_ERROR);
+                            httpResponse = ResponseHelper.buildHttpResponse(gatewayResponse);
+                        } else {
+                            context.setAiResponse(aiResponse);
+                            GatewayResponse gatewayResponse = ResponseHelper.buildGatewayResponse(aiResponse);
+                            httpResponse = ResponseHelper.buildHttpResponse(gatewayResponse);
+                        }
+                        // 直接通过Netty写回响应（线程安全）
+                        context.getNettyCtx().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
+                        return aiResponse;
                     });
+            // 短连接情况下立即返回，不等待异步响应
+            return;
         }
     }
 

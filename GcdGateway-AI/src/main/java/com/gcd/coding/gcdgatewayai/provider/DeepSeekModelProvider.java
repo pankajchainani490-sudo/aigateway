@@ -8,6 +8,7 @@ public class DeepSeekModelProvider extends OpenAIModelProvider {
 
     public DeepSeekModelProvider(ProviderConfig config) {
         super(config);
+        log.info("DeepSeekModelProvider created with config: baseUrl={}", config != null ? config.getBaseUrl() : "null");
     }
 
     @Override
