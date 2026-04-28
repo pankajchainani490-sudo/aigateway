@@ -13,7 +13,7 @@ public class NacosConfig {
     private String namespace = NACOS_DEFAULT_NAMESPACE;
 
     /**
-     * nacos配置的 Data Id
+     * nacos配置的 Data Id（用于路由配置）
      */
     private String dataId = NACOS_DEFAULT_DATA_ID;
 
@@ -26,4 +26,14 @@ public class NacosConfig {
      * nacos连接超时时长，单位ms
      */
     private int timeout = NACOS_DEFAULT_TIMEOUT;
+
+    /**
+     * AI配置在Nacos中的DataId（可选，默认使用gcd-ai-gateway）
+     */
+    private String aiDataId;
+
+    /**
+     * AI配置在Nacos中的Group（可选，默认使用DEFAULT_GROUP）
+     */
+    private String aiGroup;
 }

@@ -1,11 +1,14 @@
 package com.gcd.coding.gcdgatewayconfig.service.impl.zookeeper;
 
 import com.gcd.coding.gcdgatewayconfig.config.ConfigCenter;
+import com.gcd.coding.gcdgatewayconfig.service.AIConfigChangeListener;
 import com.gcd.coding.gcdgatewayconfig.service.ConfigCenterProcessor;
 import com.gcd.coding.gcdgatewayconfig.service.RoutesChangeListener;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Slf4j
 // TODO Zookeeper配置中心实现
 public class ZookeeperConfigCenter implements ConfigCenterProcessor {
 
@@ -32,5 +35,15 @@ public class ZookeeperConfigCenter implements ConfigCenterProcessor {
         if (!configCenter.isEnabled() || !init.get()) {
             return;
         }
+        // TODO Zookeeper实现
+    }
+
+    @Override
+    public void subscribeAIConfigChange(AIConfigChangeListener listener, String aiDataId, String aiGroup) {
+        if (!configCenter.isEnabled() || !init.get()) {
+            return;
+        }
+        log.warn("Zookeeper配置中心暂未实现AI配置订阅功能");
+        // TODO Zookeeper实现
     }
 }

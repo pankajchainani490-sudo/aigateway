@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcd.coding.gcdgatewayconfig.config.ConfigCenter;
 import com.gcd.coding.gcdgatewayconfig.config.lib.nacos.NacosConfig;
 import com.gcd.coding.gcdgatewayconfig.pojo.RouteDefinition;
+import com.gcd.coding.gcdgatewayconfig.service.AIConfigChangeListener;
 import com.gcd.coding.gcdgatewayconfig.service.ConfigCenterProcessor;
 import com.gcd.coding.gcdgatewayconfig.service.RoutesChangeListener;
 import lombok.SneakyThrows;
@@ -56,27 +57,7 @@ public class NacosConfigCenter implements ConfigCenterProcessor {
         }
         NacosConfig nacos = configCenter.getNacos();
         String configJson = configService.getConfig(nacos.getDataId(), nacos.getGroup(), nacos.getTimeout());
-        /* configJson:
-         * {
-         *     "routes": [
-         *         {
-         *             "id": "user-service-route",
-         *             "serviceName": "user-service",
-         *             "uri": "/api/user/**",
-         *             "corsConfig": {
-         *              "allowOrigin": "https://user.example.com",
-         *              "allowHeaders": "Content-Type, X-User-Token"
-         *              }
-         *         },
-         *         {
-         *              "id": "order-service-route",
-         *              "serviceName": "order-service",
-         *              "uri": "/api/order/**"
-         *         }
-         *     ]
-         * }
-         */
-        log.info("config from nacos: \n{}", configJson);
+        log.info("从Nacos加载路由配置: \n{}", configJson);
         List<RouteDefinition> routes = JSON.parseObject(configJson).getJSONArray("routes").toJavaList(RouteDefinition.class);
         listener.onRoutesChange(routes);
 
@@ -88,13 +69,47 @@ public class NacosConfigCenter implements ConfigCenterProcessor {
 
             @Override
             public void receiveConfigInfo(String configInfo) {
-                log.info("config change from nacos: {}", configInfo);
+                log.info("Nacos路由配置变更通知: {}", configInfo);
                 List<RouteDefinition> routes = JSON.parseObject(configInfo).getJSONArray("routes").toJavaList(RouteDefinition.class);
                 listener.onRoutesChange(routes);
             }
         });
+    }
 
+    @Override
+    public void subscribeAIConfigChange(AIConfigChangeListener listener, String aiDataId, String aiGroup) {
+        if (!configCenter.isEnabled() || !init.get()) {
+            log.warn("Nacos配置中心未启用，跳过AI配置订阅");
+            return;
+        }
+        // 先获取一次当前配置
+        try {
+            String configJson = configService.getConfig(aiDataId, aiGroup, 5000);
+            if (configJson != null && !configJson.isEmpty()) {
+                log.info("从Nacos加载AI配置: \n{}", configJson);
+                listener.onAIConfigChange(configJson);
+            }
+        } catch (NacosException e) {
+            log.error("从Nacos获取AI配置失败: {}", e.getMessage());
+        }
 
+        // 添加监听器，监听配置变更
+        try {
+            configService.addListener(aiDataId, aiGroup, new Listener() {
+                @Override
+                public Executor getExecutor() {
+                    return null;
+                }
+
+                @Override
+                public void receiveConfigInfo(String configInfo) {
+                    log.info("Nacos AI配置变更通知: {}", configInfo);
+                    listener.onAIConfigChange(configInfo);
+                }
+            });
+        } catch (NacosException e) {
+            log.error("添加AI配置监听器失败: {}", e.getMessage());
+        }
     }
 
     private Properties buildProperties(ConfigCenter configCenter) {
