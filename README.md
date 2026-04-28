@@ -77,41 +77,334 @@ mvn clean install -DskipTests
 mvn compile exec:java -pl GcdGateway-Demo -Dexec.mainClass="com.gcd.coding.gcdgatewaydemo.Main"
 ```
 
-### 4. 启动后端服务 (可选)
-
-```bash
-# 启动用户服务
-mvn spring-boot:run -pl GcdGateway-User
-
-# 启动订单服务
-mvn spring-boot:run -pl GcdGateway-Order
-```
-
 ## 配置说明
 
-### 网关配置 (gateway.yaml)
+### 网关基础配置 (gateway.yaml)
 
 ```yaml
 gcd:
   gateway:
     name: gcd-ai-gateway          # 网关名称
     port: 10080                   # 网关端口
+    env: dev                      # 环境标识
     configCenter:
-      enabled: false              # 是否启用配置中心（本地yaml模式）
-      type: NACOS                 # 配置中心类型
+      enabled: false              # 是否启用配置中心（false则使用本地配置）
+      type: NACOS                 # 配置中心类型：NACOS / ZOOKEEPER
       address: 127.0.0.1:8848     # 配置中心地址
+      nacos:
+        dataId: gcd-gateway          # 路由配置dataId
+        group: DEFAULT_GROUP
+        aiDataId: gcd-ai-gateway    # AI配置dataId（可选）
+        aiGroup: DEFAULT_GROUP        # AI配置group（可选）
     registerCenter:
       type: NACOS                 # 注册中心类型
       address: 127.0.0.1:8848     # 注册中心地址
-    globalCorsConfig:
+    globalCorsConfig:              # 全局跨域配置
+      enabled: true
       allowOrigin: "*"            # 允许的源
-      allowMethods: "GET,POST,OPTIONS"
+      allowMethods: "GET,POST,PUT,DELETE,OPTIONS"
       allowHeaders: "Content-Type, Authorization"
+      allowCredentials: true
       maxAge: 86400
-    routes:                       # 路由配置
+    netty:                         # Netty服务器配置
+      eventLoopGroupBossNum: 1     # Boss线程数
+      eventLoopGroupWorkerNum: 32   # Worker线程数（默认CPU核数*2）
+      maxContentLength: 67108864    # 最大内容长度（64MB）
+    httpClient:                     # HTTP客户端配置
+      eventLoopGroupWorkerNum: 32   # HTTP客户端Worker线程数
+      httpConnectTimeout: 30000     # 连接超时（ms）
+      httpRequestTimeout: 30000    # 请求超时（ms）
+      httpMaxRedirects: 2          # 最大重定向次数
+      httpMaxConnections: 10000    # 最大连接数
+      httpConnectionsPerHost: 8000 # 每主机最大连接数
+      httpPooledConnectionIdleTimeout: 60000  # 空闲连接超时（ms）
+```
+
+### 完整路由配置示例
+
+以下是包含所有策略和算法的完整路由配置：
+
+```yaml
+gcd:
+  gateway:
+    routes:
+      # AI聊天路由 - 包含流控、熔断、负载均衡、灰度等所有策略
       - id: ai-chat-route
         serviceName: ai-chat-service
         uri: /api/ai/**
+        order: 0
+        resilience:                    # 弹性配置（熔断、降级、重试）
+          enabled: true
+          retryEnabled: true          # 是否开启重试
+          circuitBreakerEnabled: true # 是否开启熔断
+          fallbackEnabled: true       # 是否开启降级
+          bulkheadEnabled: false      # 是否开启信号量隔离
+          threadPoolBulkheadEnabled: false  # 是否开启线程池隔离
+          order:                      # 过滤器执行顺序
+            - THREADPOOLBULKHEAD
+            - BULKHEAD
+            - RETRY
+            - CIRCUITBREAKER
+            - FALLBACK
+          # 重试配置
+          maxAttempts: 3              # 最大重试次数
+          waitDuration: 500            # 重试间隔时间（ms）
+          # 熔断配置
+          failureRateThreshold: 50     # 失败率阈值（%），超过则熔断
+          slowCallRateThreshold: 100   # 慢调用比例阈值（%）
+          slowCallDurationThreshold: 60000  # 慢调用判定时间（ms）
+          permittedNumberOfCallsInHalfOpenState: 10  # 半开状态允许调用次数
+          maxWaitDurationInHalfOpenState: 0  # 半开状态最大等待时间（ms），0表示一直等待
+          type: COUNT_BASED          # 熔断器类型：COUNT_BASED / TIME_BASED
+          slidingWindowSize: 100      # 滑动窗口大小
+          minimumNumberOfCalls: 100   # 最小调用次数（用于计算失败率）
+          waitDurationInOpenState: 60000  # 熔断开启到半开的等待时间（ms）
+          automaticTransitionFromOpenToHalfOpenEnabled: false  # 自动转换到半开
+          # 降级配置
+          fallbackHandlerName: default_fallback_handler  # 降级处理器名称
+          # 信号量隔离配置
+          maxConcurrentCalls: 1000   # 最大并发调用数
+          maxWaitDuration: 0         # 最大等待时间（ms）
+          fairCallHandlingEnabled: false  # 公平竞争模式
+          # 线程池隔离配置
+          coreThreadPoolSize: 5      # 核心线程数
+          maxThreadPoolSize: 10      # 最大线程数
+          queueCapacity: 100         # 队列容量
+        filterConfigs:               # 路由级过滤器配置
+          - name: flow_filter
+            enable: true
+            config: |
+              {
+                "enabled": true,
+                "type": "TOKEN_BUCKET",
+                "capacity": 1000,
+                "rate": 500
+              }
+          - name: gray_filter
+            enable: true
+            config: |
+              {
+                "strategyName": "threshold_gray_strategy",
+                "maxGrayThreshold": 0.3
+              }
+          - name: load_balance_filter
+            enable: true
+            config: |
+              {
+                "strategyName": "round_robin",
+                "isStrictRoundRobin": true,
+                "virtualNodeNum": 3
+              }
+        corsFilterConfig:           # 路由级跨域配置
+          enabled: true
+          allowOrigin: "*"
+          allowMethods: "GET,POST,PUT,DELETE,OPTIONS"
+          allowHeaders: "Content-Type, Authorization"
+          allowCredentials: true
+          maxAge: 3600
+
+      # 用户服务路由 - 简单配置
+      - id: user-service-route
+        serviceName: user-service
+        uri: /api/user/**
+        order: 1
+        resilience:
+          enabled: true
+          retryEnabled: true
+          circuitBreakerEnabled: true
+          fallbackEnabled: true
+```
+
+### 流控配置 (FlowFilterConfig)
+
+流量控制支持三种算法：
+
+```yaml
+# 方式1：令牌桶限流（TOKEN_BUCKET）- 常用
+filterConfigs:
+  - name: flow_filter
+    enable: true
+    config: |
+      {
+        "enabled": true,
+        "type": "TOKEN_BUCKET",    # 令牌桶算法
+        "capacity": 1000,           # 桶容量
+        "rate": 500                 # 令牌生成速率（个/秒）
+      }
+
+# 方式2：滑动窗口限流（SLIDING_WINDOW）
+filterConfigs:
+  - name: flow_filter
+    enable: true
+    config: |
+      {
+        "enabled": true,
+        "type": "SLIDING_WINDOW",   # 滑动窗口算法
+        "capacity": 1000,           # 窗口容量
+        "rate": 60000                # 窗口大小（ms）
+      }
+
+# 方式3：漏桶限流（LEAKY_BUCKET）
+filterConfigs:
+  - name: flow_filter
+    enable: true
+    config: |
+      {
+        "enabled": true,
+        "type": "LEAKY_BUCKET",     # 漏桶算法
+        "capacity": 1000,           # 桶容量
+        "rate": 100                 # 漏桶速率（ms/个）
+      }
+```
+
+### 灰度发布配置 (GrayFilterConfig)
+
+```yaml
+# 阈值灰度策略 - 根据流量比例灰度
+filterConfigs:
+  - name: gray_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "threshold_gray_strategy",
+        "maxGrayThreshold": 0.3     # 30%流量走灰度版本
+      }
+
+# 基于IP的灰度策略
+filterConfigs:
+  - name: gray_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "ip_gray_strategy",
+        "grayIpList": ["192.168.1.100", "192.168.1.101"],
+        "maxGrayThreshold": 1.0     # IP在列表中则100%走灰度
+      }
+```
+
+### 负载均衡配置 (LoadBalanceFilterConfig)
+
+```yaml
+# 方式1：轮询负载均衡（默认）
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "round_robin",
+        "isStrictRoundRobin": true   # 严格轮询
+      }
+
+# 方式2：加权轮询
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "weight_round_robin",
+        "isStrictRoundRobin": true
+      }
+
+# 方式3：随机负载均衡
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "random"
+      }
+
+# 方式4：加权随机
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "weight_random"
+      }
+
+# 方式5：一致性哈希
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "consistent_hash",
+        "virtualNodeNum": 3         # 虚拟节点数
+      }
+
+# 方式6：最少活跃调用
+filterConfigs:
+  - name: load_balance_filter
+    enable: true
+    config: |
+      {
+        "strategyName": "least_active"
+      }
+```
+
+### 熔断器配置 (CircuitBreaker)
+
+Resilience4j熔断器配置，通过`resilience`字段设置：
+
+```yaml
+resilience:
+  enabled: true
+  # 熔断器类型
+  type: COUNT_BASED  # COUNT_BASED=计数滑动窗口，TIME_BASED=时间滑动窗口
+  # 熔断触发条件
+  failureRateThreshold: 50      # 失败率阈值（%），超过触发熔断
+  slowCallRateThreshold: 100     # 慢调用比例阈值（%）
+  slowCallDurationThreshold: 60000  # 慢调用判定阈值（ms）
+  # 滑动窗口
+  slidingWindowSize: 100          # 滑动窗口大小
+  minimumNumberOfCalls: 100       # 计算失败率的最小调用数
+  # 熔断状态转换
+  waitDurationInOpenState: 60000  # 熔断开启到半开的等待时间（ms）
+  permittedNumberOfCallsInHalfOpenState: 10  # 半开状态允许的调用数
+  automaticTransitionFromOpenToHalfOpenEnabled: false  # 是否自动转换
+  maxWaitDurationInHalfOpenState: 0  # 半开状态最大等待时间
+```
+
+### 降级配置 (Fallback)
+
+```yaml
+resilience:
+  fallbackEnabled: true
+  fallbackHandlerName: default_fallback_handler  # 降级处理器名称
+
+# 内置降级处理器：
+# - default_fallback_handler: 返回统一错误响应
+# - custom_fallback_handler: 自定义降级处理（需实现FallbackHandler接口）
+```
+
+### 重试配置 (Retry)
+
+```yaml
+resilience:
+  retryEnabled: true
+  maxAttempts: 3               # 最大重试次数（包括首次调用）
+  waitDuration: 500             # 重试间隔（ms）
+```
+
+### 信号量隔离配置 (Bulkhead)
+
+```yaml
+resilience:
+  bulkheadEnabled: true
+  maxConcurrentCalls: 1000      # 最大并发信号量数
+  maxWaitDuration: 0            # 最大等待时间（ms），0表示不等待
+  fairCallHandlingEnabled: false  # 公平竞争模式
+```
+
+### 线程池隔离配置 (ThreadPoolBulkhead)
+
+```yaml
+resilience:
+  threadPoolBulkheadEnabled: true
+  coreThreadPoolSize: 5          # 核心线程数
+  maxThreadPoolSize: 10          # 最大线程数
+  queueCapacity: 100             # 队列容量
 ```
 
 ### AI 配置 (gateway.yaml 中的 ai 部分)
@@ -157,20 +450,163 @@ gcd:
           weight: 100                     # 权重 (用于负载均衡)
 ```
 
-### 服务配置 (application.yml)
+## Nacos 配置详解
 
-```yaml
-server:
-  port: 10001
+### 完整 Nacos 配置格式（JSON）
 
-spring:
-  cloud:
-    nacos:
-      discovery:
-        server-addr: 127.0.0.1:8848  # Nacos 地址
-  application:
-    name: user-service              # 服务名称
+当`configCenter.enabled: true`时，可在Nacos中配置所有网关参数：
+
+```json
+{
+  "routes": [
+    {
+      "id": "ai-chat-route",
+      "serviceName": "ai-chat-service",
+      "uri": "/api/ai/**",
+      "order": 0,
+      "resilience": {
+        "enabled": true,
+        "retryEnabled": true,
+        "circuitBreakerEnabled": true,
+        "fallbackEnabled": true,
+        "bulkheadEnabled": false,
+        "threadPoolBulkheadEnabled": false,
+        "order": ["THREADPOOLBULKHEAD", "BULKHEAD", "RETRY", "CIRCUITBREAKER", "FALLBACK"],
+        "maxAttempts": 3,
+        "waitDuration": 500,
+        "failureRateThreshold": 50,
+        "slowCallRateThreshold": 100,
+        "slowCallDurationThreshold": 60000,
+        "permittedNumberOfCallsInHalfOpenState": 10,
+        "maxWaitDurationInHalfOpenState": 0,
+        "type": "COUNT_BASED",
+        "slidingWindowSize": 100,
+        "minimumNumberOfCalls": 100,
+        "waitDurationInOpenState": 60000,
+        "automaticTransitionFromOpenToHalfOpenEnabled": false,
+        "fallbackHandlerName": "default_fallback_handler",
+        "maxConcurrentCalls": 1000,
+        "maxWaitDuration": 0,
+        "fairCallHandlingEnabled": false,
+        "coreThreadPoolSize": 5,
+        "maxThreadPoolSize": 10,
+        "queueCapacity": 100
+      },
+      "filterConfigs": [
+        {
+          "name": "flow_filter",
+          "enable": true,
+          "config": "{\"enabled\":true,\"type\":\"TOKEN_BUCKET\",\"capacity\":1000,\"rate\":500}"
+        },
+        {
+          "name": "gray_filter",
+          "enable": true,
+          "config": "{\"strategyName\":\"threshold_gray_strategy\",\"maxGrayThreshold\":0.3}"
+        },
+        {
+          "name": "load_balance_filter",
+          "enable": true,
+          "config": "{\"strategyName\":\"round_robin\",\"isStrictRoundRobin\":true,\"virtualNodeNum\":3}"
+        }
+      ],
+      "corsFilterConfig": {
+        "enabled": true,
+        "allowOrigin": "*",
+        "allowMethods": "GET,POST,PUT,DELETE,OPTIONS",
+        "allowHeaders": "Content-Type, Authorization",
+        "allowCredentials": true,
+        "maxAge": 3600
+      }
+    }
+  ]
+}
 ```
+
+### Nacos AI 配置（单独管理）
+
+AI配置可通过单独的dataId管理，便于独立发布：
+
+```json
+{
+  "enabled": true,
+  "billing": {
+    "enabled": true,
+    "currency": "CNY",
+    "logEnabled": true
+  },
+  "token": {
+    "defaultRateLimitPerMinute": 1000000,
+    "tokenRateLimitEnabled": false
+  },
+  "cache": {
+    "enabled": true,
+    "mode": "exact",
+    "ttlSeconds": 3600,
+    "maxSize": 10000,
+    "similarityThreshold": 0.95
+  },
+  "providers": [
+    {
+      "name": "deepseek",
+      "type": "deepseek",
+      "baseUrl": "https://api.deepseek.com",
+      "apiKey": "sk-your-api-key",
+      "protocol": "openai",
+      "supportsStreaming": true,
+      "connectTimeout": 30000,
+      "requestTimeout": 120000,
+      "maxRetries": 3
+    },
+    {
+      "name": "openai",
+      "type": "openai",
+      "baseUrl": "https://api.openai.com",
+      "apiKey": "sk-your-openai-key",
+      "protocol": "openai",
+      "supportsStreaming": true,
+      "connectTimeout": 30000,
+      "requestTimeout": 120000,
+      "maxRetries": 3
+    }
+  ],
+  "models": [
+    {
+      "modelName": "deepseek-chat",
+      "providerName": "deepseek",
+      "providerModelId": "deepseek-chat",
+      "inputPricePer1KTokens": 0.001,
+      "outputPricePer1KTokens": 0.002,
+      "cacheHitDiscount": 0.5,
+      "maxInputTokens": 128000,
+      "maxOutputTokens": 4096,
+      "supportsStreaming": true,
+      "weight": 100
+    },
+    {
+      "modelName": "gpt-4",
+      "providerName": "openai",
+      "providerModelId": "gpt-4",
+      "inputPricePer1KTokens": 0.03,
+      "outputPricePer1KTokens": 0.06,
+      "cacheHitDiscount": 0.5,
+      "maxInputTokens": 8192,
+      "maxOutputTokens": 4096,
+      "supportsStreaming": true,
+      "weight": 50
+    }
+  ]
+}
+```
+
+### 配置优先级
+
+```
+Nacos配置中心 > 本地gateway.yaml
+```
+
+### 配置热更新
+
+修改Nacos中的配置后，网关会自动感知变更并生效，无需重启服务。
 
 ## 项目测试
 
@@ -253,7 +689,7 @@ POST /api/ai/chat
     {"role": "user", "content": "你好"}
   ],
   "temperature": 0.7,                  // 温度参数 (可选)
-  "maxTokens": 1000,                  // 最大输出 tokens (可选)
+  "maxTokens": 1000,                 // 最大输出 tokens (可选)
   "stream": false                     // 是否流式输出 (可选)
 }
 ```
@@ -287,7 +723,6 @@ POST /api/ai/chat
 ### 1. 基础聊天测试
 
 ```bash
-# 测试基本对话功能
 curl -X POST http://127.0.0.1:10080/api/ai/chat \
   -H "Content-Type: application/json" \
   -d '{
@@ -296,33 +731,9 @@ curl -X POST http://127.0.0.1:10080/api/ai/chat \
   }'
 ```
 
-**预期响应**：
-```json
-{
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "created": 1712500000,
-  "model": "deepseek-v4-flash",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "Hello! How can I help you today?"
-    },
-    "finishReason": "stop"
-  }],
-  "usage": {
-    "promptTokens": 5,
-    "completionTokens": 12,
-    "totalTokens": 17
-  }
-}
-```
-
 ### 2. 流式响应测试
 
 ```bash
-# 测试SSE流式输出
 curl -X POST http://127.0.0.1:10080/api/ai/chat \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
@@ -333,25 +744,9 @@ curl -X POST http://127.0.0.1:10080/api/ai/chat \
   }'
 ```
 
-**预期响应**（SSE格式）：
-```
-data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"春"},"finishReason":null}]}
-
-data: {"choices":[{"index":0,"delta":{"content":"眠"},"finishReason":null}]}
-
-data: {"choices":[{"index":0,"delta":{"content":"不"},"finishReason":null}]}
-
-data: {"choices":[{"index":0,"delta":{"content":"觉"},"finishReason":null}]}
-
-data: {"choices":[{"index":0,"delta":{"content":"晓"},"finishReason":null}]}
-
-data: {"choices":[{"index":0,"delta":{"content":""},"finishReason":"stop"}]}
-```
-
 ### 3. 多轮对话测试
 
 ```bash
-# 测试多轮对话上下文
 curl -X POST http://127.0.0.1:10080/api/ai/chat \
   -H "Content-Type: application/json" \
   -d '{
@@ -364,173 +759,6 @@ curl -X POST http://127.0.0.1:10080/api/ai/chat \
     ]
   }'
 ```
-
-### 4. 计费功能测试
-
-确保`billing.enabled: true`后，请求会自动记录计费信息：
-
-```bash
-# 查看计费日志
-tail -f logs/billing.log
-
-# 发送请求后，日志会记录类似：
-# [Billing] user=xxx, model=deepseek-chat, promptTokens=50, completionTokens=100, totalTokens=150, cost=0.25 CNY
-```
-
-### 5. 缓存功能测试
-
-**精确匹配缓存**：
-```bash
-# 发送相同请求两次，第二次应该命中缓存
-curl -X POST http://127.0.0.1:10080/api/ai/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-chat",
-    "messages": [{"role": "user", "content": "今天天气怎么样"}]
-  }'
-```
-
-## Nacos AI 配置详解
-
-### 方式一：Nacos配置中心（推荐生产环境使用）
-
-当`configCenter.enabled: true`时，AI配置可从Nacos动态获取，支持配置变更实时生效。
-
-#### 1. 在Nacos中创建配置
-
-**Data ID**: `gcd-ai-gateway`（可自定义，通过`nacos.aiDataId`配置）
-**Group**: `DEFAULT_GROUP`（可自定义，通过`nacos.aiGroup`配置）
-**配置格式**: JSON
-
-#### 2. Nacos中AI配置的完整JSON格式
-
-```json
-{
-  "enabled": true,
-  "billing": {
-    "enabled": true,
-    "currency": "CNY",
-    "logEnabled": true
-  },
-  "token": {
-    "defaultRateLimitPerMinute": 1000000,
-    "tokenRateLimitEnabled": false
-  },
-  "cache": {
-    "enabled": true,
-    "mode": "exact",
-    "ttlSeconds": 3600,
-    "maxSize": 10000,
-    "similarityThreshold": 0.95
-  },
-  "providers": [
-    {
-      "name": "deepseek",
-      "type": "deepseek",
-      "baseUrl": "https://api.deepseek.com",
-      "apiKey": "sk-your-api-key-here",
-      "protocol": "openai",
-      "supportsStreaming": true,
-      "connectTimeout": 30000,
-      "requestTimeout": 120000,
-      "maxRetries": 3
-    },
-    {
-      "name": "openai",
-      "type": "openai",
-      "baseUrl": "https://api.openai.com",
-      "apiKey": "sk-your-openai-api-key",
-      "protocol": "openai",
-      "supportsStreaming": true,
-      "connectTimeout": 30000,
-      "requestTimeout": 120000,
-      "maxRetries": 3
-    }
-  ],
-  "models": [
-    {
-      "modelName": "deepseek-chat",
-      "providerName": "deepseek",
-      "providerModelId": "deepseek-chat",
-      "inputPricePer1KTokens": 0.001,
-      "outputPricePer1KTokens": 0.002,
-      "cacheHitDiscount": 0.5,
-      "maxInputTokens": 128000,
-      "maxOutputTokens": 4096,
-      "supportsStreaming": true,
-      "weight": 100
-    },
-    {
-      "modelName": "deepseek-reasoner",
-      "providerName": "deepseek",
-      "providerModelId": "deepseek-reasoner",
-      "inputPricePer1KTokens": 0.004,
-      "outputPricePer1KTokens": 0.008,
-      "cacheHitDiscount": 0.5,
-      "maxInputTokens": 128000,
-      "maxOutputTokens": 4096,
-      "supportsStreaming": true,
-      "weight": 100
-    },
-    {
-      "modelName": "gpt-4",
-      "providerName": "openai",
-      "providerModelId": "gpt-4",
-      "inputPricePer1KTokens": 0.03,
-      "outputPricePer1KTokens": 0.06,
-      "cacheHitDiscount": 0.5,
-      "maxInputTokens": 8192,
-      "maxOutputTokens": 4096,
-      "supportsStreaming": true,
-      "weight": 50
-    }
-  ]
-}
-```
-
-#### 3. gateway.yaml中的Nacos配置
-
-```yaml
-gcd:
-  gateway:
-    configCenter:
-      enabled: true              # 启用Nacos配置中心
-      type: NACOS
-      address: 127.0.0.1:8848
-      nacos:
-        dataId: gcd-gateway          # 路由配置dataId
-        group: DEFAULT_GROUP
-        aiDataId: gcd-ai-gateway    # AI配置dataId（可选）
-        aiGroup: DEFAULT_GROUP        # AI配置group（可选）
-```
-
-### 方式二：本地YAML配置（开发环境）
-
-当`configCenter.enabled: false`时，使用本地gateway.yaml中的AI配置。
-
-```yaml
-gcd:
-  gateway:
-    configCenter:
-      enabled: false  # 使用本地配置
-    ai:
-      # AI配置直接写在gateway.yaml中
-```
-
-### 配置优先级
-
-```
-Nacos配置中心 > 本地gateway.yaml
-```
-
-当Nacos配置中心启用时：
-1. 先加载本地gateway.yaml作为基础配置
-2. 如果Nacos可用，从Nacos拉取AI配置并覆盖本地配置
-3. 当Nacos中配置变更时，自动重新加载并生效
-
-### 配置热更新
-
-修改Nacos中的AI配置后，网关会自动感知变更并重新初始化，无需重启服务。
 
 ## AI 模块架构说明
 
@@ -578,7 +806,6 @@ AI请求经过以下过滤器链：
 确保 Nacos 已启动：
 
 ```bash
-# 检查 Nacos 是否运行
 curl http://127.0.0.1:8848/nacos/v1/console/health/readiness
 ```
 
@@ -596,16 +823,25 @@ cache:
   ttlSeconds: 3600 # 缩短缓存 TTL
 ```
 
-### 4. Nacos配置未生效
+### 4. 熔断器频繁触发
 
-1. 确认`configCenter.enabled: true`
-2. 确认Nacos中配置的DataId和Group与gateway.yaml中一致
-3. 检查Nacos配置格式是否为有效的JSON
+调整熔断器配置：
 
-### 5. 缓存未命中
+```yaml
+resilience:
+  failureRateThreshold: 70    # 提高失败率阈值
+  slowCallDurationThreshold: 30000  # 降低慢调用阈值
+```
 
-- exact模式：请求参数需完全一致
-- embedding模式：检查`similarityThreshold`阈值是否过高
+### 5. 限流不生效
+
+确保流控过滤器已启用：
+
+```yaml
+filterConfigs:
+  - name: flow_filter
+    enable: true
+```
 
 ## License
 

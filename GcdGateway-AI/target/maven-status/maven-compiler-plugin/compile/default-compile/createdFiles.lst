@@ -2,7 +2,6 @@ com\gcd\coding\gcdgatewayai\config\ModelConfig.class
 com\gcd\coding\gcdgatewayai\model\ChatMessage$ToolCall.class
 com\gcd\coding\gcdgatewayai\provider\OpenAIModelProvider$1.class
 com\gcd\coding\gcdgatewayai\config\ProviderConfig.class
-com\gcd\coding\gcdgatewayai\model\ChatMessage$ToolCall$Function.class
 com\gcd\coding\gcdgatewayai\protocol\OpenAI2AnthropicTransformer.class
 com\gcd\coding\gcdgatewayai\config\BillingConfig.class
 com\gcd\coding\gcdgatewayai\cache\EmbeddingMatchCacheProvider.class
@@ -24,6 +23,7 @@ com\gcd\coding\gcdgatewayai\filter\AISemanticCacheFilter.class
 com\gcd\coding\gcdgatewayai\model\ChatMessage.class
 com\gcd\coding\gcdgatewayai\filter\AIBillingFilter.class
 com\gcd\coding\gcdgatewayai\model\AIRequest.class
+com\gcd\coding\gcdgatewayai\model\ChatMessage$Function.class
 com\gcd\coding\gcdgatewayai\provider\AIModelProviderManager.class
 com\gcd\coding\gcdgatewayai\filter\AIModelRouteFilter.class
 com\gcd\coding\gcdgatewayai\model\SSEEvent.class

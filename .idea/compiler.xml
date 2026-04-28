@@ -7,6 +7,7 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="GcdGateway-AI" />
         <module name="GcdGateway-Order" />
         <module name="GcdGateway-Common" />
         <module name="GcdGateway-Config" />
@@ -15,12 +16,14 @@
         <module name="GcdGateway-Register" />
         <module name="GcdGateway-Bootstrap" />
         <module name="GcdGateway-Core" />
+        <module name="GraceGateway-Config" />
       </profile>
     </annotationProcessing>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="GcdGateway" options="" />
+      <module name="GcdGateway-AI" options="-parameters" />
       <module name="GcdGateway-Bootstrap" options="-parameters" />
       <module name="GcdGateway-Common" options="-parameters" />
       <module name="GcdGateway-Config" options="-parameters" />
@@ -29,6 +32,7 @@
       <module name="GcdGateway-Order" options="" />
       <module name="GcdGateway-Register" options="-parameters" />
       <module name="GcdGateway-User" options="" />
+      <module name="GraceGateway-Config" options="-parameters" />
     </option>
   </component>
 </project>
