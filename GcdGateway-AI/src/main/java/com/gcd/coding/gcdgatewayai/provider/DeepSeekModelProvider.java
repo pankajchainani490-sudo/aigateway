@@ -6,8 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * DeepSeek模型提供者 - 实现DeepSeek API调用
  *
- * DeepSeek是一个国产大模型提供商，其API格式与OpenAI兼容
- * 因此DeepSeekModelProvider继承OpenAIModelProvider，复用OpenAI协议实现
+ * 功能说明：
+ * DeepSeek是一个国产大模型提供商，其API格式与OpenAI兼容。
+ * 因此DeepSeekModelProvider继承OpenAIModelProvider，复用OpenAI协议实现。
  *
  * 主要功能：
  * 1. chat() - 异步非流式聊天请求
@@ -40,7 +41,10 @@ public class DeepSeekModelProvider extends OpenAIModelProvider {
 
     /**
      * 获取Provider名称
+     *
      * 继承父类实现，返回配置中的name字段
+     *
+     * @return 提供商名称
      */
     @Override
     public String providerName() {
@@ -49,6 +53,7 @@ public class DeepSeekModelProvider extends OpenAIModelProvider {
 
     /**
      * 获取协议类型
+     *
      * DeepSeek使用OpenAI兼容协议
      *
      * @return "openai" - 表示使用OpenAI API格式

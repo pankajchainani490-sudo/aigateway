@@ -19,60 +19,67 @@ import static com.gcd.coding.gcdgatewaycommon.constant.FilterConstant.AI_MODEL_R
 /**
  * AI模型路由过滤器 - 核心过滤器，负责将AI请求路由到对应的AI Provider
  *
+ * 功能说明：
+ * 这是AI网关的核心过滤器，负责：
+ * 1. 从请求中获取AIRequest（包含model、messages等）
+ * 2. 根据model名称查找对应的ModelConfig配置
+ * 3. 根据ModelConfig中的providerName查找对应的ProviderConfig配置
+ * 4. 获取对应的AI Provider实例（DeepSeek/OpenAI等）
+ * 5. 根据是否支持流式，选择调用chat()或chatStream()
+ * 6. 异步调用Provider并将响应写回客户端
+ *
  * 工作流程：
  * 1. 检查AI配置是否启用
  * 2. 检查是否命中缓存（缓存命中则直接返回，跳过AI调用）
- * 3. 从请求中获取AIRequest（包含model、messages等）
- * 4. 根据model名称查找对应的ModelConfig配置
- * 5. 根据ModelConfig中的providerName查找对应的ProviderConfig配置
- * 6. 获取对应的AI Provider实例（DeepSeek/OpenAI等）
- * 7. 根据是否支持流式，选择调用chat()或chatStream()
- * 8. 异步调用Provider并将响应写回客户端
+ * 3. 根据model查找ModelConfig和ProviderConfig
+ * 4. 确定是否使用流式响应
+ * 5. 调用对应的Provider方法
+ * 6. 将AI响应转换为网关响应并写回客户端
  *
- * 过滤器顺序：AI_MODEL_ROUTE_FILTER_ORDER = Integer.MIN_VALUE + 7
- * 在协议转换、Token计数、语义缓存之后，计费过滤器之前执行
+ * 过滤器顺序：AI_MODEL_ROUTE_FILTER_ORDER，在协议转换、Token计数、语义缓存之后执行
+ *
+ * @see AIModelProviderManager 提供商管理器
+ * @see ModelConfig 模型配置
+ * @see ProviderConfig 提供商配置
  */
 @Slf4j
 public class AIModelRouteFilter implements Filter {
 
     /**
-     * 预处理过滤器 - 执行AI模型的路由和调用
+     * 前置过滤器方法 - 执行AI模型的路由和调用
      *
-     * @param context 网关上下文，包含请求、响应、过滤器链等信息
+     * @param context 网关上下文
      */
     @Override
     public void doPreFilter(GatewayContext context) {
-        // 1. 获取AI网关配置（AIGatewayConfigManager是单例，管理AI配置）
+        // 第1步：获取AI网关配置
         AIGatewayConfig aiConfig = AIGatewayConfigManager.getInstance().getConfig();
 
-        // 2. 检查AI功能是否启用，若未启用则跳过此过滤器，继续后续过滤器
+        // 第2步：检查AI功能是否启用
         if (aiConfig == null || !aiConfig.isEnabled()) {
             log.debug("AI配置未启用，跳过");
             context.doFilter();
             return;
         }
 
-        // 3. 检查请求是否命中缓存（语义缓存过滤器会设置此标志）
-        // 缓存命中说明已有相同请求的响应，直接使用缓存响应
+        // 第3步：检查是否命中缓存
         if (context.isCacheHit()) {
             log.debug("缓存命中，跳过AI调用");
             context.doFilter();
             return;
         }
 
-        // 4. 从上下文获取AI请求（AIProtocolFilter预处理的请求）
-        // AIRequest包含: model(模型名), messages(消息列表), temperature, maxTokens, stream等
+        // 第4步：从上下文获取AI请求
         AIRequest aiRequest = context.getAiRequest(AIRequest.class);
 
-        // 5. 检查请求是否有效，必须包含model名称
+        // 第5步：检查请求是否有效
         if (aiRequest == null || aiRequest.getModel() == null) {
             log.debug("aiRequest为空或model为空，跳过AI路由");
             context.doFilter();
             return;
         }
 
-        // 6. 根据model名称查找对应的模型配置
-        // ModelConfig包含：模型名称、provider映射、价格信息、token限制等
+        // 第6步：根据model名称查找模型配置
         ModelConfig modelConfig = findModelConfig(aiConfig, aiRequest.getModel());
         if (modelConfig == null) {
             log.warn("未找到模型配置: {}，跳过AI路由", aiRequest.getModel());
@@ -80,11 +87,10 @@ public class AIModelRouteFilter implements Filter {
             return;
         }
 
-        // 7. 将解析后的模型配置存入上下文，供后续过滤器使用（如计费过滤器）
+        // 第7步：存入上下文，供后续过滤器使用
         context.setResolvedModel(modelConfig);
 
-        // 8. 根据模型配置中的providerName查找对应的Provider配置
-        // ProviderConfig包含：provider类型(DeepSeek/OpenAI)、baseUrl、apiKey、超时配置等
+        // 第8步：根据providerName查找提供商配置
         ProviderConfig providerConfig = findProviderConfig(aiConfig, modelConfig.getProviderName());
         if (providerConfig == null) {
             log.error("未找到Provider配置: {}", modelConfig.getProviderName());
@@ -95,8 +101,7 @@ public class AIModelRouteFilter implements Filter {
             return;
         }
 
-        // 9. 从ProviderManager获取实际的Provider实例
-        // ProviderManager管理所有注册的Provider（如DeepSeekModelProvider、OpenAIModelProvider）
+        // 第9步：获取Provider实例
         AIModelProvider provider = AIModelProviderManager.getInstance().getProvider(providerConfig.getName());
         if (provider == null) {
             log.error("未找到Provider实例: {}", providerConfig.getName());
@@ -107,60 +112,54 @@ public class AIModelRouteFilter implements Filter {
             return;
         }
 
-        // 10. 确定实际调用的模型ID（providerModelId）
-        // 如果配置了providerModelId则使用，否则使用请求中的model名称
+        // 第10步：确定实际调用的模型ID
         String providerModelId = modelConfig.getProviderModelId() != null
                 ? modelConfig.getProviderModelId()
                 : aiRequest.getModel();
 
         log.info("AI模型路由: {} -> {} [{}]", aiRequest.getModel(), providerConfig.getName(), providerModelId);
 
-        // 11. 判断是否使用流式响应
-        // 流式需要满足：请求要求stream + 模型支持流式 + Provider支持流式
+        // 第11步：判断是否使用流式响应
         boolean useStream = aiRequest.getStream() != null && aiRequest.getStream()
                 && modelConfig.isSupportsStreaming()
                 && provider.supportsStreaming();
 
-        // 12. 将请求中的model替换为providerModelId（统一格式）
+        // 第12步：将model替换为providerModelId
         aiRequest.setModel(providerModelId);
 
-        // 13. 根据是否流式选择不同的调用方式
+        // 第13步：根据是否流式选择不同的调用方式
         if (useStream) {
-            // 流式调用：直接通过Netty上下文处理SSE流
-            // chatStream方法会直接将SSE事件写入Channel，无需等待完成
+            // 流式调用
             provider.chatStream(aiRequest, providerModelId, context.getNettyCtx());
         } else {
-            // 非流式调用：异步调用Provider的chat方法
-            // 使用CompletableFuture.handle()处理响应和异常
+            // 非流式调用
             provider.chat(aiRequest, providerModelId)
                     .handle((aiResponse, throwable) -> {
                         FullHttpResponse httpResponse;
                         if (throwable != null) {
-                            // AI调用失败，设置错误响应
+                            // AI调用失败
                             log.error("AI调用失败: {}", throwable.getMessage());
                             GatewayResponse gatewayResponse = ResponseHelper.buildGatewayResponse(
                                 com.gcd.coding.gcdgatewaycommon.enums.ResponseCode.HTTP_RESPONSE_ERROR);
                             httpResponse = ResponseHelper.buildHttpResponse(gatewayResponse);
                         } else {
-                            // AI调用成功，将AI响应转换为网关响应格式
+                            // AI调用成功
                             context.setAiResponse(aiResponse);
                             GatewayResponse gatewayResponse = ResponseHelper.buildGatewayResponse(aiResponse);
                             httpResponse = ResponseHelper.buildHttpResponse(gatewayResponse);
                         }
-                        // 直接通过Netty写回响应（在HTTP客户端线程执行）
-                        // 添加CLOSE监听器，发送响应后关闭连接
+                        // 写回响应并关闭连接
                         context.getNettyCtx().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
                         return aiResponse;
                     });
-            // 立即返回，不阻塞Netty事件循环
-            // 响应会通过回调异步写回
             return;
         }
     }
 
     /**
-     * 后置过滤器 - AI路由过滤器后置处理
-     * 当前为空实现，实际响应处理在doPreFilter的异步回调中完成
+     * 后置过滤器方法
+     *
+     * @param context 网关上下文
      */
     @Override
     public void doPostFilter(GatewayContext context) {
@@ -180,8 +179,8 @@ public class AIModelRouteFilter implements Filter {
     /**
      * 根据模型名称查找模型配置
      *
-     * @param config AI网关配置（包含所有providers和models配置）
-     * @param modelName 模型名称（如"deepseek-chat"）
+     * @param config AI网关配置
+     * @param modelName 模型名称
      * @return 模型配置，未找到返回null
      */
     private ModelConfig findModelConfig(AIGatewayConfig config, String modelName) {
@@ -195,7 +194,7 @@ public class AIModelRouteFilter implements Filter {
      * 根据Provider名称查找Provider配置
      *
      * @param config AI网关配置
-     * @param providerName Provider名称（如"deepseek"）
+     * @param providerName Provider名称
      * @return Provider配置，未找到返回null
      */
     private ProviderConfig findProviderConfig(AIGatewayConfig config, String providerName) {
