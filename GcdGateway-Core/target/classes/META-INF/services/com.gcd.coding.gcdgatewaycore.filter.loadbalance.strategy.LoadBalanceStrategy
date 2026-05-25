@@ -4,3 +4,4 @@ com.gcd.coding.gcdgatewaycore.filter.loadbalance.strategy.WeightLoadBalanceStrat
 com.gcd.coding.gcdgatewaycore.filter.loadbalance.strategy.GrayLoadBalanceStrategy
 com.gcd.coding.gcdgatewaycore.filter.loadbalance.strategy.ClientIpLoadBalanceStrategy
 com.gcd.coding.gcdgatewaycore.filter.loadbalance.strategy.ClientIpConsistentHashLoadBalanceStrategy
+com.gcd.coding.gcdgatewaycore.filter.loadbalance.strategy.QuotaWeightedLoadBalanceStrategy

@@ -46,6 +46,10 @@ public class GatewayContext {
 
     private boolean shortCircuit = false;
 
+    private Object apiKeyMetadata;
+
+    private int preEstimatedTokens = 0;
+
     public GatewayContext(ChannelHandlerContext nettyCtx, GatewayRequest request,
                           RouteDefinition route, boolean keepAlive) {
         this.nettyCtx = nettyCtx;
@@ -88,6 +92,11 @@ public class GatewayContext {
 
     public <T> T getBillingRecord(Class<T> clazz) {
         return clazz.cast(billingRecord);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T getApiKeyMetadata(Class<T> clazz) {
+        return (T) apiKeyMetadata;
     }
 
 }

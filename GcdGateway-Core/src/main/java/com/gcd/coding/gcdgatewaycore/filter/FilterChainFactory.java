@@ -54,17 +54,17 @@ public class FilterChainFactory {
 
     private static void addPreFilter(FilterChain chain) {
         addFilterIfPresent(chain, CORS_FILTER_NAME);
+        addFilterIfPresent(chain, AUTH_FILTER_NAME);
         addFilterIfPresent(chain, FLOW_FILTER_NAME);
-        addFilterIfPresent(chain, GRAY_FILTER_NAME);
-        addFilterIfPresent(chain, LOAD_BALANCE_FILTER_NAME);
     }
 
     private static void addAIFilter(FilterChain chain) {
-        addFilterIfPresent(chain, AI_PROTOCOL_FILTER_NAME);
-        addFilterIfPresent(chain, AI_TOKEN_FILTER_NAME);
         addFilterIfPresent(chain, AI_CACHE_FILTER_NAME);
+        addFilterIfPresent(chain, AI_TOKEN_FILTER_NAME);
+        addFilterIfPresent(chain, AI_PROTOCOL_FILTER_NAME);
         addFilterIfPresent(chain, AI_MODEL_ROUTE_FILTER_NAME);
         addFilterIfPresent(chain, AI_BILLING_FILTER_NAME);
+        addFilterIfPresent(chain, TOKEN_POST_FILTER_NAME);
     }
 
     private static void addFilter(FilterChain chain, Set<RouteDefinition.FilterConfig> filterConfigs) {

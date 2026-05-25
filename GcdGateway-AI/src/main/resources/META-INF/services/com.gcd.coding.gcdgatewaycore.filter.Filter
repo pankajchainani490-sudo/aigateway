@@ -3,3 +3,6 @@ com.gcd.coding.gcdgatewayai.filter.AITokenFilter
 com.gcd.coding.gcdgatewayai.filter.AISemanticCacheFilter
 com.gcd.coding.gcdgatewayai.filter.AIModelRouteFilter
 com.gcd.coding.gcdgatewayai.filter.AIBillingFilter
+com.gcd.coding.gcdgatewayai.filter.AuthFilter
+com.gcd.coding.gcdgatewayai.filter.NegativeCacheFilter
+com.gcd.coding.gcdgatewayai.filter.AITokenPostCorrectionFilter

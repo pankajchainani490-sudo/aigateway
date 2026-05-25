@@ -38,48 +38,28 @@ public class AISemanticCacheFilter implements Filter {
             return;
         }
 
-        AICacheProvider cacheProvider = AICacheManager.getInstance().getCurrentProvider();
-        if (cacheProvider == null) {
+        AICacheManager cacheManager = AICacheManager.getInstance();
+        if (cacheManager.getExactProvider() == null) {
             context.doFilter();
             return;
         }
 
-        String cacheKey = cacheProvider.generateKey(aiRequest);
+        AICacheManager.CacheLookupResult lookupResult = cacheManager.lookupFromThreeLevelCache(aiRequest);
 
-        AIResponse cachedResponse = null;
-        String mode = cacheConfig.getMode();
-
-        if ("exact".equalsIgnoreCase(mode)) {
-            cachedResponse = cacheProvider.get(cacheKey);
-            if (cachedResponse != null) {
-                log.info("精确匹配缓存命中!");
-            }
-        } else if ("embedding".equalsIgnoreCase(mode)) {
-            EmbeddingMatchCacheProvider embeddingProvider = AICacheManager.getInstance().getEmbeddingProvider();
-            if (embeddingProvider != null) {
-                String similarKey = embeddingProvider.findSimilarWithDetails(cacheKey);
-                if (similarKey != null) {
-                    cachedResponse = embeddingProvider.get(similarKey);
-                    if (cachedResponse != null) {
-                        log.info("嵌入相似度缓存命中! 阈值: {}", cacheConfig.getSimilarityThreshold());
-                    }
-                }
-            }
-        }
-
-        if (cachedResponse != null) {
+        if (lookupResult.isHit()) {
             context.setCacheHit(true);
-            context.setCacheMode(mode);
-            context.setAiResponse(cachedResponse);
+            context.setCacheMode(lookupResult.cacheMode());
+            context.setAiResponse(lookupResult.response());
             context.setShortCircuit(true);
 
-            String responseBody = JSONUtil.toJsonStr(cachedResponse);
+            String responseBody = JSONUtil.toJsonStr(lookupResult.response());
             GatewayResponse gatewayResponse = new GatewayResponse();
             gatewayResponse.addHeader(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON + ";charset=utf-8");
             gatewayResponse.setHttpResponseStatus(HttpResponseStatus.OK);
             gatewayResponse.setContent(responseBody);
             context.setResponse(gatewayResponse);
 
+            log.info("三级缓存命中，模式: {}", lookupResult.cacheMode());
             return;
         }
 
@@ -105,12 +85,9 @@ public class AISemanticCacheFilter implements Filter {
         AIResponse aiResponse = context.getAiResponse(AIResponse.class);
 
         if (aiRequest != null && aiResponse != null && aiResponse.getChoices() != null && !aiResponse.getChoices().isEmpty()) {
-            AICacheProvider cacheProvider = AICacheManager.getInstance().getCurrentProvider();
-            if (cacheProvider != null) {
-                String cacheKey = cacheProvider.generateKey(aiRequest);
-                cacheProvider.put(cacheKey, aiResponse, cacheConfig.getTtlSeconds() * 1000L);
-                log.debug("AI响应已缓存，模式: {}", cacheConfig.getMode());
-            }
+            AICacheManager cacheManager = AICacheManager.getInstance();
+            cacheManager.putToAllLevelCaches(aiRequest, aiResponse);
+            log.debug("AI响应已写入三级缓存");
         }
 
         context.doFilter();

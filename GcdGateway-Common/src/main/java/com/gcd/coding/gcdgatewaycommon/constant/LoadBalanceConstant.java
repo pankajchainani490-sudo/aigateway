@@ -23,4 +23,7 @@ public interface LoadBalanceConstant {
     // 根据请求 ip 的一致性哈希策略
     String CLIENT_IP_CONSISTENT_HASH_LOAD_BALANCE_STRATEGY = "client_ip_consistent_hash_balance_strategy";
 
+    // 配额加权负载均衡策略
+    String QUOTA_WEIGHTED_LOAD_BALANCE_STRATEGY = "quota_weighted_load_balance_strategy";
+
 }
